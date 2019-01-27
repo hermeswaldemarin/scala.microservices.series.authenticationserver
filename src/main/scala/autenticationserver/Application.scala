@@ -1,3 +1,5 @@
+package autenticationserver
+
 import org.springframework.boot.{ApplicationRunner, SpringApplication}
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.context.annotation.{Bean, ComponentScan}
@@ -8,7 +10,7 @@ import org.springframework.web.client.RestTemplate
 class Application{
 
   @Bean
-  def init(): ApplicationRunner = args => {
+  def init(): ApplicationRunner = _ => {
 
   }
 

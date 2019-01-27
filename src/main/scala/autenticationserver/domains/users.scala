@@ -27,6 +27,7 @@ import org.springframework.security.oauth2.provider.token.{ConsumerTokenServices
 import org.springframework.stereotype.{Component, Controller}
 import org.springframework.web.bind.annotation._
 import org.springframework.web.client.RestTemplate
+import scala.collection.JavaConverters._
 
 import scala.beans.BeanProperty
 
@@ -54,8 +55,7 @@ class TokenController(@javax.annotation.Resource(name = "tokenServices") tokenSe
     val tokenValues: util.List[String] = new util.ArrayList[String]
     val tokens: util.Collection[OAuth2AccessToken] = tokenStore.findTokensByClientId("sampleClientId")
     if (tokens != null) {
-      import scala.collection.JavaConversions._
-      for (token <- tokens) {
+      for (token <- tokens.asScala) {
         tokenValues.add(token.getValue)
       }
     }
@@ -64,7 +64,10 @@ class TokenController(@javax.annotation.Resource(name = "tokenServices") tokenSe
 
   @RequestMapping(method = Array(RequestMethod.POST), value = Array("/tokens/revokeRefreshToken/{tokenId:.*}"))
   @ResponseBody def revokeRefreshToken(@PathVariable tokenId: String): String = {
-    if (tokenStore.isInstanceOf[JdbcTokenStore]) tokenStore.asInstanceOf[JdbcTokenStore].removeRefreshToken(tokenId)
+    tokenStore match {
+      case store: JdbcTokenStore => store.removeRefreshToken(tokenId)
+      case _ =>
+    }
     tokenId
   }
 
@@ -92,7 +95,7 @@ class TokenController(@javax.annotation.Resource(name = "tokenServices") tokenSe
 @Component
 @Order(150)
 class UserService (userDetailsService: UserDetailsService, restTemplate: RestTemplate, emailSender: JavaMailSender) {
-  var log : Logger = LoggerFactory.getLogger(classOf[UserService])
+  val log: Logger = LoggerFactory.getLogger(classOf[UserService])
 
   @Value("classpath:mail-confirmation.html") private val mailConfirmation : Resource = null
 
@@ -100,7 +103,7 @@ class UserService (userDetailsService: UserDetailsService, restTemplate: RestTem
 
   @Value("${microservices.series.authentication-server.url}") private val urlAutenticationServer = null
 
-  protected var messages: MessageSourceAccessor = SpringSecurityMessageSource.getAccessor
+  protected val messages: MessageSourceAccessor = SpringSecurityMessageSource.getAccessor
 
   @throws[NoSuchProviderException]
   def checkExternalProviderCredentials(externalProvider: String, externalAccessToken: String, externalId: String): Unit = {
@@ -123,11 +126,11 @@ class UserService (userDetailsService: UserDetailsService, restTemplate: RestTem
       val userDetails: UserDetails = userDetailsService.loadUserByUsername(user.getUsername)
       log.info(userDetails.getUsername)
     } catch {
-      case e: UsernameNotFoundException =>
+      case _: UsernameNotFoundException =>
         try
           this.checkExternalProviderCredentials(user.getExternalProvider, user.getExternalAccessToken, user.getExternalId)
         catch {
-          case e1: NoSuchProviderException =>
+          case _: NoSuchProviderException =>
             throw new BadCredentialsException(this.messages.getMessage("AbstractUserDetailsAuthenticationProvider.badCredentials", "Bad credentials"))
         }
         val customService: CustomJdbcUserDetailsManager = userDetailsService.asInstanceOf[CustomJdbcUserDetailsManager]

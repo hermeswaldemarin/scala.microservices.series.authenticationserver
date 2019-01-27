@@ -34,26 +34,27 @@ import org.springframework.security.oauth2.provider.{ClientDetailsService, OAuth
 import org.springframework.security.provisioning.JdbcUserDetailsManager
 import org.springframework.stereotype.Component
 import org.springframework.util.Assert
+import scala.collection.JavaConverters._
 
 
 @Component
 @Order(200)
 class CustomAuthenticationProvider extends AbstractUserDetailsAuthenticationProvider{
-  val externaltoken : String = "externaltoken";
+  val externaltoken : String = "externaltoken"
 
   @Autowired(required = true) private val userDetailsService : UserDetailsService = null
 
-  @Autowired var userService: UserService = null
+  @Autowired val userService: UserService = null
 
   override def additionalAuthenticationChecks(userDetails: UserDetails, usernamePasswordAuthenticationToken: UsernamePasswordAuthenticationToken): Unit = {
-    var details = usernamePasswordAuthenticationToken.getDetails().asInstanceOf[Map[String, String]];
+    val details : util.Map[String,String] = usernamePasswordAuthenticationToken.getDetails.asInstanceOf[util.Map[String, String]]
     if (details.get(externaltoken) != null && !("" == details.get(externaltoken))) {
-      val externalToken = details.get(externaltoken).asInstanceOf[String]
-      val externalProvider = details.get("externalprovider").asInstanceOf[String]
+      val externalToken = details.get(externaltoken)
+      val externalProvider = details.get("externalprovider")
       try
         this.userService.checkExternalProviderCredentials(externalProvider, externalToken, userDetails.asInstanceOf[CustomUserDetails].getExternalid)
       catch {
-        case e: NoSuchProviderException =>
+        case _: NoSuchProviderException =>
           throw new BadCredentialsException(this.messages.getMessage("AbstractUserDetailsAuthenticationProvider.badCredentials", "Bad credentials"))
       }
     }
@@ -76,7 +77,7 @@ class CustomAuthenticationProvider extends AbstractUserDetailsAuthenticationProv
     }
 
     if (loadedUser == null) throw new InternalAuthenticationServiceException("UserDetailsService returned null, which is an interface contract violation")
-    else return loadedUser
+    else loadedUser
   }
 
   override def supports(authentication: Class[_]): Boolean = authentication == classOf[UsernamePasswordAuthenticationToken]
@@ -121,7 +122,7 @@ class CustomJdbcUserDetailsManager extends JdbcUserDetailsManager{
     new CustomUserDetails(user, externalid)
   }
 
-  protected def loadExternalId(username: String): util.List[String] = return this.getJdbcTemplate.query(this.externalIdByUsername, new RowMapper[String]() {
+  protected def loadExternalId(username: String): util.List[String] = this.getJdbcTemplate.query(this.externalIdByUsername, new RowMapper[String]() {
     @throws[SQLException]
     override def mapRow(rs: ResultSet, rowNum: Int): String = rs.getString(1)
   }, username)
@@ -144,16 +145,14 @@ class CustomJdbcUserDetailsManager extends JdbcUserDetailsManager{
 
   private def validateAuthoritiesCustom(authorities: util.Collection[_ <: GrantedAuthority]): Unit = {
     Assert.notNull(authorities, "Authorities list must not be null")
-    import scala.collection.JavaConversions._
-    for (authority <- authorities) {
+    for (authority <- authorities.asScala) {
       Assert.notNull(authority, "Authorities list contains a null entry")
       Assert.hasText(authority.getAuthority, "getAuthority() method must return a non-empty string")
     }
   }
 
   private def insertUserAuthoritiesCustom(user: UserDetails): Unit = {
-    import scala.collection.JavaConversions._
-    for (auth <- user.getAuthorities) {
+    for (auth <- user.getAuthorities.asScala) {
       getJdbcTemplate.update(createAuthoritySql, user.getUsername, auth.getAuthority)
     }
   }
