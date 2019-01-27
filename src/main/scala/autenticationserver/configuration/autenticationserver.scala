@@ -5,7 +5,7 @@ import java.sql.{PreparedStatement, ResultSet, SQLException}
 import java.util
 import java.util.{Map, UUID}
 
-import autenticationserver.services.UserService
+import autenticationserver.domains.UserService
 import javax.sql.DataSource
 import org.apache.commons.lang3.RandomStringUtils.randomAlphabetic
 import org.springframework.beans.factory.annotation.{Autowired, Qualifier, Value}

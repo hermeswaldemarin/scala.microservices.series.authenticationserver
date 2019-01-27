@@ -1,11 +1,13 @@
-package autenticationserver.services
+package autenticationserver.domains
 
+import java.io.IOException
 import java.nio.charset.Charset
 import java.security.NoSuchProviderException
 import java.util
 
 import autenticationserver.configuration.{CustomJdbcUserDetailsManager, CustomUserDetails}
 import javax.mail.internet.MimeMessage
+import javax.servlet.http.{HttpServletRequest, HttpServletResponse}
 import org.apache.commons.io.IOUtils
 import org.json.{JSONException, JSONObject}
 import org.slf4j.{Logger, LoggerFactory}
@@ -13,16 +15,79 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.support.MessageSourceAccessor
 import org.springframework.core.annotation.Order
 import org.springframework.core.io.Resource
-import org.springframework.http.ResponseEntity
+import org.springframework.http.{HttpStatus, ResponseEntity}
 import org.springframework.mail.javamail.{JavaMailSender, MimeMessageHelper, MimeMessagePreparator}
 import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.security.core.SpringSecurityMessageSource
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.userdetails.{UserDetails, UserDetailsService, UsernameNotFoundException}
-import org.springframework.stereotype.Component
+import org.springframework.security.oauth2.common.OAuth2AccessToken
+import org.springframework.security.oauth2.provider.token.store.JdbcTokenStore
+import org.springframework.security.oauth2.provider.token.{ConsumerTokenServices, TokenStore}
+import org.springframework.stereotype.{Component, Controller}
+import org.springframework.web.bind.annotation._
 import org.springframework.web.client.RestTemplate
 
 import scala.beans.BeanProperty
+
+
+
+@Controller
+class TokenController(@javax.annotation.Resource(name = "tokenServices") tokenServices: ConsumerTokenServices,
+                      @javax.annotation.Resource(name = "tokenStore") tokenStore: TokenStore,
+                      userDetailsService: UserDetailsService,
+                      userService: UserService) {
+
+  @Value("${microservices.series.authentication-server.redirecturl}") private val tokenConfirmationRedirectUrl = null
+
+  protected var messages: MessageSourceAccessor = SpringSecurityMessageSource.getAccessor
+
+  private val log = LoggerFactory.getLogger(classOf[UserService])
+
+  @RequestMapping(method = Array(RequestMethod.POST), value = Array("/oauth/token/revokeById/{tokenId}"))
+  @ResponseBody def revokeToken(request: HttpServletRequest, @PathVariable tokenId: String): Unit = {
+    tokenServices.revokeToken(tokenId)
+  }
+
+  @RequestMapping(method = Array(RequestMethod.GET), value = Array("/tokens"))
+  @ResponseBody def getTokens: util.List[String] = {
+    val tokenValues: util.List[String] = new util.ArrayList[String]
+    val tokens: util.Collection[OAuth2AccessToken] = tokenStore.findTokensByClientId("sampleClientId")
+    if (tokens != null) {
+      import scala.collection.JavaConversions._
+      for (token <- tokens) {
+        tokenValues.add(token.getValue)
+      }
+    }
+    tokenValues
+  }
+
+  @RequestMapping(method = Array(RequestMethod.POST), value = Array("/tokens/revokeRefreshToken/{tokenId:.*}"))
+  @ResponseBody def revokeRefreshToken(@PathVariable tokenId: String): String = {
+    if (tokenStore.isInstanceOf[JdbcTokenStore]) tokenStore.asInstanceOf[JdbcTokenStore].removeRefreshToken(tokenId)
+    tokenId
+  }
+
+  @RequestMapping(method = Array(RequestMethod.POST), value = Array("/user-create")) def postMessage(@RequestBody user: User): ResponseEntity[String] = {
+    userService.createUser(user)
+    new ResponseEntity[String]("OK", HttpStatus.CREATED)
+  }
+
+  @RequestMapping(method = Array(RequestMethod.GET), value = Array("/confirm-token"))
+  @ResponseStatus(HttpStatus.OK) def confirmEmailToken(@RequestParam token: String, response: HttpServletResponse): Unit = {
+    val customService: CustomJdbcUserDetailsManager = userDetailsService.asInstanceOf[CustomJdbcUserDetailsManager]
+    val username: String = customService.getUserNameByToken(token)
+    val userDetails: UserDetails = customService.loadUserByUsername(username)
+    val userUpdate: UserDetails = new CustomUserDetails(new org.springframework.security.core.userdetails.User(userDetails.getUsername, userDetails.getPassword, true, userDetails.isAccountNonExpired, userDetails.isCredentialsNonExpired, userDetails.isAccountNonLocked, userDetails.getAuthorities), userDetails.asInstanceOf[CustomUserDetails].getExternalid)
+    customService.updateUser(userUpdate)
+    try
+      response.sendRedirect(tokenConfirmationRedirectUrl)
+    catch {
+      case e: IOException =>
+        log.error("Error", e)
+    }
+  }
+}
 
 @Component
 @Order(150)
